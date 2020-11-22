@@ -34,33 +34,37 @@ int main () {
     DBG(fprintf(stdout, "Stack current size: %d\n", cur_size))
 
 
+    void** val;
+
     DBG(stack_print(stack))
-    sleep(3);
+    sleep(2);
     push(stack, &data[0]);
     DBG(stack_print(stack))
-    sleep(3);
+    sleep(2);
      push(stack, &data[1]);
     DBG(stack_print(stack))
-    sleep(3);
-     push(stack, &data[2]);
+    sleep(2);
+    push(stack, &data[2]);
     DBG(stack_print(stack))
-    sleep(3);
+    sleep(2);
+    pop(stack, val);
+    DBG(stack_print(stack))
+    sleep(2);
+    pop(stack, val);
+    DBG(stack_print(stack))
+    sleep(2);
+    pop(stack, val);
+    DBG(stack_print(stack))
+    sleep(2);
      push(stack, &data[3]);
     DBG(stack_print(stack))
-    // while (1) {
-    //     DBG(stack_print(stack))
-    //     sleep(3);   
-    // }
-
-    //sleep(5);
+    sleep(2);
+    pop(stack, val);
+    DBG(stack_print(stack))
 
 
     DBG(fprintf(stdout, "Stack pointer before detaching: %p\n", stack))
-    //detach_stack(stack);
-
-    //try to access stack
-    //DBG(fprintf(stdout, "Accessing stack\n"));
-    //DBG(fprintf(stdout, "Max size: %d\n", stack->m_max_size));
+    detach_stack(stack);
 
     DBG(fprintf(stdout, "Stack pointer after detaching: %p\n", stack))
 

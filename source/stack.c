@@ -140,16 +140,18 @@ stack_t* attach_stack(key_t key, int size) {
 
 int get_size(stack_t* stack) {
     assert(stack != NULL);
-    int size = stack->m_max_size;
+    //update cur size
+    stack->m_max_size = *(( int*) (stack->m_memory ));
 
-    return size;
+    return stack->m_max_size;
 }
 
 int get_count(stack_t* stack) {
     assert(stack != NULL);
-    int count = stack->m_cur_size;
+    //update cur size
+    stack->m_cur_size = *(( int*) (stack->m_memory +  sizeof(void*)) );
     
-    return count;
+    return stack->m_cur_size;
 }
 
 
@@ -209,18 +211,12 @@ int push(stack_t* stack, void* val) {
         perror("Error in semop(): ");
     }
 
-    //DBG(stack_print(stack));
-
-    //stack->m_memory[stack->m_cur_size + 2] = val;
-    
-    //DBG(fprintf(stdout, "Val: %d\n", * ((int*) val)))
     
     // update cur size
 
     stack->m_cur_size = *(( int*) (stack->m_memory +  sizeof(void*)) );
 
     memcpy((void*) (stack->m_memory + (stack->m_cur_size + 2) * sizeof(void*)), val, sizeof(void*));
-    //DBG(fprintf(stdout, "Stack [%d]: %d\n", stack->m_cur_size, *( (int*) (stack->m_memory + (stack->m_cur_size + 2) * sizeof(void*)) )))
 
     int new_cur_size = stack->m_cur_size + 1;
     stack->m_cur_size = new_cur_size;
@@ -235,7 +231,47 @@ int push(stack_t* stack, void* val) {
     }
 
     sval = semctl(sem_id, 0, GETVAL);
-    //DBG(fprintf(stdout, "Semaphore value:%d\n", sval))
 
     return 0;
+}
+
+
+int pop(stack_t* stack, void** val) {
+
+    int key = ftok(sync_path, SYNC);
+    if (key == -1) {
+        perror("Error in ftok(): ");
+    }
+
+    // creating or attaching semaphore set
+    int sem_id = set_sem_set(key);
+
+    struct sembuf semafor = {0, -1, 0};
+    semafor.sem_flg = SEM_UNDO;
+
+    // taking semaphore
+    int sval = semctl(sem_id, 0, GETVAL);
+    DBG(fprintf(stdout, "Semaphore value before taking:%d\n", sval))
+    int resop = semop(sem_id, &semafor, 1);
+
+    //update cur size
+    stack->m_cur_size = *(( int*) (stack->m_memory +  sizeof(void*)) );
+    void** pop_value = stack->m_memory + (2 + stack->m_cur_size) * sizeof(void*);
+   // DBG(fprintf(stdout, "Value being popped: %d\n", *( (int*) *pop_value)))
+    val = pop_value;
+
+    //set new cur size
+    int new_cur_size = stack->m_cur_size - 1;
+    stack->m_cur_size = new_cur_size;
+    memcpy((void*) (stack->m_memory + sizeof(void*)), &new_cur_size, sizeof(int));
+
+
+    // releasing semaphore
+    semafor.sem_op = 1;
+    resop = semop(sem_id, &semafor, 1);
+    if (resop == -1) {
+        perror("Error in semop(): ");
+    }
+
+    return 0;; 
 }
