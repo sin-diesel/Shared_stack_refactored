@@ -2,8 +2,9 @@
 
 extern const char* sync_path;
 
-//stack_t* stack;
+#define SLEEP_T 1
 
+//stack_t* stack;
 //#define CLEAR
 
 int main () {
@@ -37,30 +38,33 @@ int main () {
     void** val;
 
     DBG(stack_print(stack))
-    sleep(2);
+    sleep(SLEEP_T);
     push(stack, &data[0]);
     DBG(stack_print(stack))
-    sleep(2);
-     push(stack, &data[1]);
+    sleep(SLEEP_T);
+    push(stack, &data[1]);
     DBG(stack_print(stack))
-    sleep(2);
+    sleep(SLEEP_T);
     push(stack, &data[2]);
     DBG(stack_print(stack))
-    sleep(2);
-    pop(stack, val);
+    sleep(SLEEP_T);
+    push(stack, &data[3]);
     DBG(stack_print(stack))
-    sleep(2);
-    pop(stack, val);
+    sleep(SLEEP_T);
+    push(stack, &data[4]);
     DBG(stack_print(stack))
-    sleep(2);
-    pop(stack, val);
+    sleep(SLEEP_T);
+    push(stack, &data[4]);
     DBG(stack_print(stack))
-    sleep(2);
-     push(stack, &data[3]);
-    DBG(stack_print(stack))
-    sleep(2);
-    pop(stack, val);
-    DBG(stack_print(stack))
+
+    while(1) {
+        sleep(SLEEP_T);
+    }
+    // pop(stack, val);
+    // DBG(stack_print(stack))
+    // sleep(SLEEP_T);
+    // pop(stack, val);
+    // DBG(stack_print(stack))
 
 
     DBG(fprintf(stdout, "Stack pointer before detaching: %p\n", stack))

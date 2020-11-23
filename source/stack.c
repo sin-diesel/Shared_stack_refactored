@@ -2,7 +2,12 @@
 
 
 const char* sync_path = "/home/stanislav/Documents/MIPT/3rd_semester/Computer_technologies";
+#define N_SEMS 3
 
+
+/*TODO: 1) check for empty stack, add new semafore for current size
+        2) same for full stack
+        3) print value being popped */
 
 void stack_print_elem(stack_t* stack) {
     for (int i = 0; i < stack->m_cur_size; ++i) {
@@ -24,34 +29,28 @@ void stack_print(stack_t* stack) {
 
 int set_sem_set(int key) {
 
-    int sem_id = semget(key, 1, IPC_CREAT | IPC_EXCL | 0666 );
-    if (sem_id > 0 && errno != EEXIST) { // set is new, this setting the initial value of semaphore to 1
+    int sem_id = semget(key, N_SEMS, IPC_CREAT | IPC_EXCL | 0666 );
+    if (sem_id > 0 && errno != EEXIST) { 
 
-        DBG(fprintf(stdout, "Creating new semaphore set\n"))
+    DBG(fprintf(stdout, "Creating new semaphore set\n"))
+    sem_id = semget(key, N_SEMS, IPC_CREAT | 0666);
 
-        sem_id = semget(key, 1, IPC_CREAT | 0666);
-        if (sem_id == -1) {
-            perror("Error in semget(): ");
-        }
-
-        int resop  = semctl(sem_id, 0, SETVAL, 1);
-        DBG(fprintf(stdout, "Setting semaphore to 1\n"))
-        if (resop == -1) {
-            perror("Error in set_sem_set(): ");
-        }
+    if (sem_id == -1) {
+        perror("Error in semget() in set_sem_set(): ");
+    }
 
     } else {
         DBG(fprintf(stdout, "Attaching old semaphore set\n"))
-        sem_id = semget(key, 1, 0666);
+        sem_id = semget(key, N_SEMS, 0666);
         if (sem_id == -1) {
-            perror("Error in semget(): ");
+            perror("Error in semget() in set_sem_set(): ");
         }
     }
     return sem_id;
 }
 
 void semdel(int key) {
-    int sem_id = semget(key, 1, 0666);
+    int sem_id = semget(key, N_SEMS, 0666);
     if (sem_id == -1) {
         perror("Erorr in semget(): ");
     }
@@ -83,6 +82,13 @@ stack_t* attach_stack(key_t key, int size) {
     int stack_size = size;
 
     DBG(fprintf(stdout, "Stack size: %d elements\n", stack_size))
+
+    int sem_id = set_sem_set(key);
+
+    if (resop == -1) {
+        perror("Error in semctl() when setting empty semaphore: ");
+    }
+
 
     int id = shmget(key, stack_size * sizeof(void*), IPC_CREAT | IPC_EXCL | 0666);
 
@@ -120,6 +126,18 @@ stack_t* attach_stack(key_t key, int size) {
 
         int max_size = size;
         int cur_size = 0;
+
+        int resop  = semctl(sem_id, 0, SETVAL, 1);
+        DBG(fprintf(stdout, "Setting semaphore to 1\n"))
+        resop  = semctl(sem_id, 1, SETVAL, max_size );
+        DBG(fprintf(stdout, "Setting empty to stack_size \n"))
+        resop  = semctl(sem_id, 2, SETVAL, 0);
+        DBG(fprintf(stdout, "Setting full to 0 \n"));
+
+        //DBG(fprintf(stdout, "Setting empty to stack_size: %d \n", sval))
+        if (resop == -1) {
+            perror("Error in semctl() when setting empty semaphore: ");
+        }
 
         DBG((fprintf(stdout, "Copying max size %d and cur size %d to shared memory[0] = %p and memory[1] = %p\n", max_size, cur_size,
                                 stack->m_memory, stack->m_memory + sizeof(void*))))
@@ -198,15 +216,35 @@ int push(stack_t* stack, void* val) {
     // creating or attaching semaphore set
     int sem_id = set_sem_set(key);
 
-    struct sembuf semafor = {0, -1, 0};
-    semafor.sem_flg = SEM_UNDO;
+    struct sembuf* sops = (struct sembuf*) calloc(3, sizeof(struct sembuf));
+    assert(sops);
+    
+    // set semaphore to SEM_UNDO so stack does not crash when any processes acquring this semaphore get terminated
+    sops[1].sem_flg = SEM_UNDO;
+    sops[0].sem_flg = 0;
 
-    // taking semaphore
-    int sval = semctl(sem_id, 0, GETVAL);
-    DBG(fprintf(stdout, "Semaphore value before taking:%d\n", sval))
-    int resop = semop(sem_id, &semafor, 1);
+    int sval = 0;
+    int resop = 0;
+
+    // semaphore numbers: semaphore - 0, empty - 1, full - 2
+    // CHANGE: sops[0] - empty --, sops[1] = semaphore --
+
+    sops[0].sem_num = 1;
+    sops[0].sem_op = -1;
+    sops[1].sem_num = 0;
+    sops[1].sem_op = -1;
+
+    DBG(fprintf(stdout, "Empty --, semafore --\n"))
+    if (semop(sem_id, sops, 2) == -1) {
+        perror("Error in semop() in changing semaphores\n");
+    }
+
+    sval = semctl(sem_id, 1, GETVAL);
+    DBG(fprintf(stdout, "empty value upon entering critical area: %d\n", sval))
     sval = semctl(sem_id, 0, GETVAL);
-    DBG(fprintf(stdout, "Semaphore value after taking:%d\n", sval))
+    DBG(fprintf(stdout, "Semaphore value on entering critical area :%d\n", sval))
+
+    //DBG(fprintf(stdout, "Semaphore value after taking:%d\n", sval))
     if (resop == -1) {
         perror("Error in semop(): ");
     }
@@ -220,18 +258,40 @@ int push(stack_t* stack, void* val) {
 
     int new_cur_size = stack->m_cur_size + 1;
     stack->m_cur_size = new_cur_size;
-    memcpy((void*) (stack->m_memory + sizeof(void*)), &new_cur_size, sizeof(int));
 
 
-    // releasing semaphore
-    semafor.sem_op = 1;
-    resop = semop(sem_id, &semafor, 1);
     if (resop == -1) {
         perror("Error in semop(): ");
     }
 
-    sval = semctl(sem_id, 0, GETVAL);
+    memcpy((void*) (stack->m_memory + sizeof(void*)), &new_cur_size, sizeof(int));
 
+
+   // semaphore numbers: semaphore - 0, empty - 1, full - 2
+    // CHANGE: sops[0] - semaphore ++, sops[1] - full ++
+
+    sops[0].sem_flg = SEM_UNDO;
+    sops[1].sem_flg = 0;
+
+    sops[0].sem_num = 0;
+    sops[0].sem_op = 1;
+    sops[1].sem_num = 2;
+    sops[1].sem_op = 1;
+
+    DBG(fprintf(stdout, "semaphore ++, full ++\n"))
+
+    sval = semctl(sem_id, 0, GETVAL);
+    DBG(fprintf(stdout, "Semaphore value on exiting critical area:%d\n", sval))
+    sval = semctl(sem_id, 2, GETVAL);
+    DBG(fprintf(stdout, "Full value on exiting critical area :%d\n", sval))
+
+    semop(sem_id, sops, 2);
+
+    if (resop == -1) {
+        perror("Error in semop(): ");
+    }
+
+    free(sops);
     return 0;
 }
 
@@ -246,18 +306,37 @@ int pop(stack_t* stack, void** val) {
     // creating or attaching semaphore set
     int sem_id = set_sem_set(key);
 
-    struct sembuf semafor = {0, -1, 0};
-    semafor.sem_flg = SEM_UNDO;
 
-    // taking semaphore
-    int sval = semctl(sem_id, 0, GETVAL);
-    DBG(fprintf(stdout, "Semaphore value before taking:%d\n", sval))
-    int resop = semop(sem_id, &semafor, 1);
+    struct sembuf* sops = (struct sembuf*) calloc(3, sizeof(struct sembuf));
+    assert(sops);
+    sops[0].sem_op = -1;
+    sops[1].sem_op = 1;
+    sops[2].sem_op = -1;
+    
+    // set semaphore to SEM_UNDO so stack does not crash when any processes acquring this semaphore get terminated
+    sops[0].sem_flg = SEM_UNDO;
+
+    int sval = 0;
+    int resop = 0;
+
+
+    semop(sem_id, sops, 3);
+
+    sval = semctl(sem_id, 2, GETVAL);
+    DBG(fprintf(stdout, "Full value after taking:%d\n", sval))
+    sval = semctl(sem_id, 0, GETVAL);
+    DBG(fprintf(stdout, "Semaphore value after taking :%d\n", sval))
+
+    if (resop == -1) {
+        perror("Error in semop(): ");
+    }
 
     //update cur size
     stack->m_cur_size = *(( int*) (stack->m_memory +  sizeof(void*)) );
+
+
     void** pop_value = stack->m_memory + (2 + stack->m_cur_size) * sizeof(void*);
-   // DBG(fprintf(stdout, "Value being popped: %d\n", *( (int*) *pop_value)))
+    //DBG(fprintf(stdout, "Value being popped: %p\n", pop_value ));
     val = pop_value;
 
     //set new cur size
@@ -267,8 +346,16 @@ int pop(stack_t* stack, void** val) {
 
 
     // releasing semaphore
-    semafor.sem_op = 1;
-    resop = semop(sem_id, &semafor, 1);
+
+    sops[0].sem_op = 1;
+
+    semop(sem_id, sops, 3);
+
+    sval = semctl(sem_id, 0, GETVAL);
+    DBG(fprintf(stdout, "Semaphore value after taking (finished critical area):%d\n", sval))
+    sval = semctl(sem_id, 1, GETVAL);
+    DBG(fprintf(stdout, "Empty value after taking:%d\n", sval))
+
     if (resop == -1) {
         perror("Error in semop(): ");
     }
