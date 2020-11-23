@@ -36,14 +36,14 @@ int set_sem_set(int key) {
     sem_id = semget(key, N_SEMS, IPC_CREAT | 0666);
 
     if (sem_id == -1) {
-        perror("Error in semget() in set_sem_set(): ");
+        //perror("Error in semget() in set_sem_set(): ");
     }
 
     } else {
         DBG(fprintf(stdout, "Attaching old semaphore set\n"))
         sem_id = semget(key, N_SEMS, 0666);
         if (sem_id == -1) {
-            perror("Error in semget() in set_sem_set(): ");
+            //perror("Error in semget() in set_sem_set(): ");
         }
     }
     return sem_id;
@@ -52,23 +52,23 @@ int set_sem_set(int key) {
 void semdel(int key) {
     int sem_id = semget(key, N_SEMS, 0666);
     if (sem_id == -1) {
-        perror("Erorr in semget(): ");
+        //perror("Erorr in semget(): ");
     }
 
     int resop = semctl(sem_id, 0, IPC_RMID);
     if (resop == -1) {
-        perror("Error in semctl(): ");
+        //perror("Error in semctl(): ");
     }
 }
 
 void shmdel(int key, int size) {
     int id = shmget(key, size * sizeof(char), 0);
     if (id == -1) {
-        perror("Erorr in shmget(): ");
+        //perror("Erorr in shmget(): ");
     }
     int resop = shmctl (id , IPC_RMID , NULL);
     if (resop == -1) {
-        perror("Error in shmctl(): ");
+        //perror("Error in shmctl(): ");
     }
 }
 
@@ -86,23 +86,23 @@ stack_t* attach_stack(key_t key, int size) {
     int sem_id = set_sem_set(key);
 
     if (resop == -1) {
-        perror("Error in semctl() when setting empty semaphore: ");
+        //perror("Error in semctl() when setting empty semaphore: ");
     }
 
 
     int id = shmget(key, stack_size * sizeof(void*), IPC_CREAT | IPC_EXCL | 0666);
 
     if (id == -1) {
-        fprintf(stdout, "Stack exists, attaching the stack\n");
+        //fprintf(stdout, "Stack exists, attaching the stack\n");
 
         id = shmget(key, stack_size * sizeof(void*), 0666);
         if (id == -1) {
-            perror("Error in shmget: ");
+            //perror("Error in shmget: ");
         }
 
         stack->m_memory = (void*) shmat(id, NULL, 0);
         if (stack->m_memory == (void*) -1) {
-            perror("Error in shmat(): ");
+            //perror("Error in shmat(): ");
             return NULL;
         }
         stack->m_max_size = *((int*) (stack->m_memory));
@@ -110,17 +110,17 @@ stack_t* attach_stack(key_t key, int size) {
 
         return stack;
     } else {
-        fprintf(stdout, "No stack exists, creating new stack\n");
+        //fprintf(stdout, "No stack exists, creating new stack\n");
         
         id = shmget(key, stack_size * sizeof(char), 0666);
         if (id == -1) {
-            perror("Error in shmget(): ");
+            //perror("Error in shmget(): ");
         }
 
         stack->m_memory = shmat(id, NULL, 0);
 
         if (stack->m_memory == (void*) -1) {
-            perror("Error in shmat(): ");
+            //perror("Error in shmat(): ");
             return NULL;
         }
 
@@ -177,7 +177,7 @@ int detach_stack(stack_t* stack) {
     int resop = 0;
     resop = shmdt(stack->m_memory);
     if (resop == -1) {
-        perror("Error in detaching stack with shmdt(): ");
+        //perror("Error in detaching stack with shmdt(): ");
     }
     free(stack);
     return resop;
@@ -189,17 +189,17 @@ int mark_destruct(stack_t* stack) {
 
     int key = ftok(sync_path, SYNC);
     if (key == -1) {
-        perror("Error in ftok(): ");
+        //perror("Error in ftok(): ");
     }
 
     int id = shmget(key, 0, 0);
     if (id == -1) {
-        perror("Error in shmget: ");
+        //perror("Error in shmget: ");
     }
 
     int resop = shmctl(id, IPC_RMID, 0);
     if (resop == -1) {
-        perror("Error in marking stack for destruction: ");
+        //perror("Error in marking stack for destruction: ");
     }
 
     return resop;
@@ -210,7 +210,7 @@ int push(stack_t* stack, void* val) {
 
     int key = ftok(sync_path, SYNC);
     if (key == -1) {
-        perror("Error in ftok(): ");
+        //perror("Error in ftok(): ");
     }
 
     // creating or attaching semaphore set
@@ -220,7 +220,7 @@ int push(stack_t* stack, void* val) {
     assert(sops);
     
     // set semaphore to SEM_UNDO so stack does not crash when any processes acquring this semaphore get terminated
-    sops[0].sem_flg = 0;
+    sops[0].sem_flg = SEM_UNDO;
     sops[1].sem_flg = SEM_UNDO;
 
     int sval = 0;
@@ -229,19 +229,19 @@ int push(stack_t* stack, void* val) {
     // semaphore numbers: semaphore - 0, empty - 1, full - 2
     // CHANGE: sops[0] - empty --, sops[1] = semaphore --
 
-    sops[0].sem_num = 1;
+    sops[0].sem_num = 0;
     sops[0].sem_op = -1;
-    sops[1].sem_num = 0;
+    sops[1].sem_num = 1;
     sops[1].sem_op = -1;
 
     DBG(fprintf(stdout, "Empty --, semafore --\n"))
 
     struct timespec timeout;
-    set_wait(1, &timeout);
+    set_wait(2, &timeout);
 
-    semtimedop(sem_id, sops, 2, &timeout);
+    semtimedop(sem_id, sops, 1, NULL);
      if (errno == EAGAIN) {
-        fprintf(stdout, "Timeout interval exceeded, operation aborted\n");
+        //fprintf(stdout, "Timeout interval exceeded, operation aborted\n");
         errno = 0;
         return -1;
     }
@@ -253,13 +253,21 @@ int push(stack_t* stack, void* val) {
 
     //DBG(fprintf(stdout, "Semaphore value after taking:%d\n", sval))
     if (resop == -1) {
-        perror("Error in semop(): ");
+        //perror("Error in semop(): ");
     }
 
     
     // update cur size
 
     stack->m_cur_size = *(( int*) (stack->m_memory +  sizeof(void*)) );
+
+    if (stack->m_cur_size == stack->m_max_size) {
+        sops[0].sem_num = 0;
+        sops[0].sem_op = 1;
+        sops[0].sem_flg = SEM_UNDO;
+         semtimedop(sem_id, sops, 1, NULL);
+        return -1;
+    }
 
     memcpy((void*) (stack->m_memory + (stack->m_cur_size + 2) * sizeof(void*)), val, sizeof(void*));
 
@@ -268,7 +276,7 @@ int push(stack_t* stack, void* val) {
 
 
     if (resop == -1) {
-        perror("Error in semop(): ");
+        //perror("Error in semop(): ");
     }
 
     memcpy((void*) (stack->m_memory + sizeof(void*)), &new_cur_size, sizeof(int));
@@ -293,10 +301,10 @@ int push(stack_t* stack, void* val) {
     DBG(fprintf(stdout, "Full value on exiting critical area :%d\n", sval))
 
 
-    semtimedop(sem_id, sops, 2, &timeout);
+    semtimedop(sem_id, sops, 1, NULL);
 
     if (resop == -1) {
-        perror("Error in semop(): ");
+        //perror("Error in semop(): ");
     }
 
     free(sops);
@@ -308,7 +316,7 @@ int pop(stack_t* stack, void** val) {
 
     int key = ftok(sync_path, SYNC);
     if (key == -1) {
-        perror("Error in ftok(): ");
+        //perror("Error in ftok(): ");
     }
 
     // creating or attaching semaphore set
@@ -322,13 +330,13 @@ int pop(stack_t* stack, void** val) {
     // semaphore numbers: semaphore - 0, empty - 1, full - 2
     // CHANGE: sops[0] - full --, sops[1] = semaphore --
 
-    sops[0].sem_num = 2;
+    sops[0].sem_num = 0;
     sops[0].sem_op = -1;
     sops[1].sem_num = 0;
     sops[1].sem_op = -1;
 
     sops[1].sem_flg = SEM_UNDO;
-    sops[0].sem_flg = 0;
+    sops[0].sem_flg = SEM_UNDO;
 
     int sval = 0;
     int resop = 0;
@@ -337,9 +345,9 @@ int pop(stack_t* stack, void** val) {
     struct timespec timeout;
     set_wait(1, &timeout);
 
-    semtimedop(sem_id, sops, 2, &timeout);
+    semtimedop(sem_id, sops, 1, NULL);
     if (errno == EAGAIN) {
-        fprintf(stdout, "Timeout interval exceeded, operation aborted\n");
+        //fprintf(stdout, "Timeout interval exceeded, operation aborted\n");
         errno = 0;
         return -1;
     }
@@ -350,11 +358,19 @@ int pop(stack_t* stack, void** val) {
     DBG(fprintf(stdout, "Semaphore value after taking :%d\n", sval))
 
     if (resop == -1) {
-        perror("Error in semop(): ");
+        //perror("Error in semop(): ");
     }
 
     //update cur size
     stack->m_cur_size = *(( int*) (stack->m_memory +  sizeof(void*)) );
+
+    if (stack->m_cur_size == 0) {
+        sops[0].sem_num = 0;
+        sops[0].sem_op = 1;
+        sops[0].sem_flg = SEM_UNDO;
+        semtimedop(sem_id, sops, 1, NULL);
+        return -1;
+    }
 
 
     void** pop_value = stack->m_memory + (2 + stack->m_cur_size) * sizeof(void*);
@@ -381,7 +397,7 @@ int pop(stack_t* stack, void** val) {
     sops[1].sem_flg = 0;
 
 
-    semtimedop(sem_id, sops, 2, &timeout);
+    semtimedop(sem_id, sops, 1, NULL);
 
     sval = semctl(sem_id, 0, GETVAL);
     DBG(fprintf(stdout, "Semaphore value after taking (finished critical area):%d\n", sval))
@@ -389,7 +405,7 @@ int pop(stack_t* stack, void** val) {
     DBG(fprintf(stdout, "Empty value after taking:%d\n", sval))
 
     if (resop == -1) {
-        perror("Error in semop(): ");
+        //perror("Error in semop(): ");
     }
 
     return 0;; 

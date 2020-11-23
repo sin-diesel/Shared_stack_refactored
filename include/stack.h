@@ -22,7 +22,7 @@
 
 
 #define ERROR fprintf(stderr, "Error %s in %d %s\n", strerror(errno), __LINE__, __func__);
-#define DEBUG 1
+#define DEBUG 0
 #define DBG(stmt) if (DEBUG) {stmt;}
 
 #define POISON 6666 
