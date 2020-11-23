@@ -235,8 +235,15 @@ int push(stack_t* stack, void* val) {
     sops[1].sem_op = -1;
 
     DBG(fprintf(stdout, "Empty --, semafore --\n"))
-    if (semop(sem_id, sops, 2) == -1) {
-        perror("Error in semop() in changing semaphores\n");
+
+    struct timespec timeout;
+    set_wait(1, &timeout);
+
+    semtimedop(sem_id, sops, 2, &timeout);
+     if (errno == EAGAIN) {
+        fprintf(stdout, "Timeout interval exceeded, operation aborted\n");
+        errno = 0;
+        return -1;
     }
 
     sval = semctl(sem_id, 1, GETVAL);
@@ -285,7 +292,8 @@ int push(stack_t* stack, void* val) {
     sval = semctl(sem_id, 2, GETVAL);
     DBG(fprintf(stdout, "Full value on exiting critical area :%d\n", sval))
 
-    semop(sem_id, sops, 2);
+
+    semtimedop(sem_id, sops, 2, &timeout);
 
     if (resop == -1) {
         perror("Error in semop(): ");
@@ -326,7 +334,15 @@ int pop(stack_t* stack, void** val) {
     int resop = 0;
 
 
-    semop(sem_id, sops, 2);
+    struct timespec timeout;
+    set_wait(1, &timeout);
+
+    semtimedop(sem_id, sops, 2, &timeout);
+    if (errno == EAGAIN) {
+        fprintf(stdout, "Timeout interval exceeded, operation aborted\n");
+        errno = 0;
+        return -1;
+    }
 
     sval = semctl(sem_id, 2, GETVAL);
     DBG(fprintf(stdout, "Full value after taking:%d\n", sval))
@@ -364,7 +380,8 @@ int pop(stack_t* stack, void** val) {
     sops[0].sem_flg = SEM_UNDO;
     sops[1].sem_flg = 0;
 
-    semop(sem_id, sops, 2);
+
+    semtimedop(sem_id, sops, 2, &timeout);
 
     sval = semctl(sem_id, 0, GETVAL);
     DBG(fprintf(stdout, "Semaphore value after taking (finished critical area):%d\n", sval))

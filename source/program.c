@@ -61,16 +61,18 @@ int main (int argc, char** argv) {
         }
     }
 
-    TEST_PUSH(0);
-    TEST_POP(val)
-    TEST_PUSH(0);
-    TEST_POP(val)
-    TEST_PUSH(0);
-    TEST_POP(val)
-    TEST_PUSH(0);
-    TEST_POP(val)
-    TEST_PUSH(0);
-    TEST_POP(val)
+    // TEST_PUSH(0);
+    // TEST_PUSH(0);
+    // TEST_PUSH(0);
+    // TEST_PUSH(0);
+    // TEST_PUSH(0);
+    // TEST_PUSH(0);
+    // TEST_POP(val)
+    // TEST_POP(val)
+    // TEST_POP(val)
+    // TEST_POP(val)
+    // TEST_POP(val)
+    // TEST_POP(val)
     
 
     // 1 - push, 0 = pop
