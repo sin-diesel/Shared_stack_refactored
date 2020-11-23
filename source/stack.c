@@ -220,8 +220,8 @@ int push(stack_t* stack, void* val) {
     assert(sops);
     
     // set semaphore to SEM_UNDO so stack does not crash when any processes acquring this semaphore get terminated
-    sops[1].sem_flg = SEM_UNDO;
     sops[0].sem_flg = 0;
+    sops[1].sem_flg = SEM_UNDO;
 
     int sval = 0;
     int resop = 0;
@@ -270,13 +270,13 @@ int push(stack_t* stack, void* val) {
    // semaphore numbers: semaphore - 0, empty - 1, full - 2
     // CHANGE: sops[0] - semaphore ++, sops[1] - full ++
 
-    sops[0].sem_flg = SEM_UNDO;
-    sops[1].sem_flg = 0;
-
     sops[0].sem_num = 0;
     sops[0].sem_op = 1;
     sops[1].sem_num = 2;
     sops[1].sem_op = 1;
+
+    sops[1].sem_flg = 0;
+    sops[0].sem_flg = SEM_UNDO;
 
     DBG(fprintf(stdout, "semaphore ++, full ++\n"))
 
@@ -309,18 +309,24 @@ int pop(stack_t* stack, void** val) {
 
     struct sembuf* sops = (struct sembuf*) calloc(3, sizeof(struct sembuf));
     assert(sops);
+
+
+    // semaphore numbers: semaphore - 0, empty - 1, full - 2
+    // CHANGE: sops[0] - full --, sops[1] = semaphore --
+
+    sops[0].sem_num = 2;
     sops[0].sem_op = -1;
-    sops[1].sem_op = 1;
-    sops[2].sem_op = -1;
-    
-    // set semaphore to SEM_UNDO so stack does not crash when any processes acquring this semaphore get terminated
-    sops[0].sem_flg = SEM_UNDO;
+    sops[1].sem_num = 0;
+    sops[1].sem_op = -1;
+
+    sops[1].sem_flg = SEM_UNDO;
+    sops[0].sem_flg = 0;
 
     int sval = 0;
     int resop = 0;
 
 
-    semop(sem_id, sops, 3);
+    semop(sem_id, sops, 2);
 
     sval = semctl(sem_id, 2, GETVAL);
     DBG(fprintf(stdout, "Full value after taking:%d\n", sval))
@@ -347,9 +353,18 @@ int pop(stack_t* stack, void** val) {
 
     // releasing semaphore
 
-    sops[0].sem_op = 1;
+   // semaphore numbers: semaphore - 0, empty - 1, full - 2
+    // CHANGE: sops[0] - semaphore ++, sops[1] - empty ++
 
-    semop(sem_id, sops, 3);
+    sops[0].sem_num = 0;
+    sops[0].sem_op  = 1;
+    sops[1].sem_num = 1;
+    sops[1].sem_op  = 1;
+
+    sops[0].sem_flg = SEM_UNDO;
+    sops[1].sem_flg = 0;
+
+    semop(sem_id, sops, 2);
 
     sval = semctl(sem_id, 0, GETVAL);
     DBG(fprintf(stdout, "Semaphore value after taking (finished critical area):%d\n", sval))
@@ -361,4 +376,16 @@ int pop(stack_t* stack, void** val) {
     }
 
     return 0;; 
+}
+
+int set_wait(int val, struct timespec* timeout) {
+    if (val == -1) {
+        return val;
+    } else if (val == 1) {
+        timeout->tv_sec = 1;
+        timeout->tv_nsec = 0;
+        return val;
+    } else if (val == 0) {
+        return val;
+    }
 }

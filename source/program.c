@@ -4,16 +4,33 @@ extern const char* sync_path;
 
 #define SLEEP_T 1
 
+#define TEST_PUSH(a)   sleep(SLEEP_T);          \
+                       push(stack, &data[a]);   \
+                       DBG(stack_print(stack))  \
+
+#define TEST_POP(val)  sleep(SLEEP_T);          \
+                       pop(stack, val);   \
+                       DBG(stack_print(stack))  \
+
 //stack_t* stack;
 //#define CLEAR
 
-int main () {
+int main (int argc, char** argv) {
 
     int stack_size = 20;
 
     int key = ftok(sync_path, SYNC);
     if (key == -1) {
         perror("Error in ftok(): ");
+    }
+
+    if (argc == 2) {
+        if (strcmp(argv[1], "-c") == 0) {
+            fprintf(stdout, "Deleting segment\n");
+            shmdel(key, stack_size);
+            semdel(key);
+            exit(0);
+        }
     }
 
     /* Deleting segment */
@@ -37,29 +54,37 @@ int main () {
 
     void** val;
 
-    DBG(stack_print(stack))
-    sleep(SLEEP_T);
-    push(stack, &data[0]);
-    DBG(stack_print(stack))
-    sleep(SLEEP_T);
-    push(stack, &data[1]);
-    DBG(stack_print(stack))
-    sleep(SLEEP_T);
-    push(stack, &data[2]);
-    DBG(stack_print(stack))
-    sleep(SLEEP_T);
-    push(stack, &data[3]);
-    DBG(stack_print(stack))
-    sleep(SLEEP_T);
-    push(stack, &data[4]);
-    DBG(stack_print(stack))
-    sleep(SLEEP_T);
-    push(stack, &data[4]);
-    DBG(stack_print(stack))
-
-    while(1) {
-        sleep(SLEEP_T);
+    for (int i = 0; i < 3; ++i) {
+        int resop = fork();
+        if (resop == -1) {
+            perror("Error while forking\n");
+        }
     }
+
+    TEST_PUSH(0);
+    TEST_POP(val)
+    TEST_PUSH(0);
+    TEST_POP(val)
+    TEST_PUSH(0);
+    TEST_POP(val)
+    TEST_PUSH(0);
+    TEST_POP(val)
+    TEST_PUSH(0);
+    TEST_POP(val)
+    
+
+    // 1 - push, 0 = pop
+    // while (1) {
+    //     int op = -1;
+    //     fprintf(stdout, "Enter cmd: \n");
+    //     int res = fscanf(stdin, "%d", &op);
+    //     assert(res == 1);
+    //     if (op == 0) {
+    //         TEST_POP(val);
+    //     } else if (op == 1) {
+    //         TEST_PUSH(0);
+    //     }
+    // }
     // pop(stack, val);
     // DBG(stack_print(stack))
     // sleep(SLEEP_T);
