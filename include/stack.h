@@ -21,7 +21,7 @@
 #include <sys/sem.h>
 
 
-#define ERROR fprintf(stderr, "Error %s in %d %s\n", strerror(errno), __LINE__, __func__);
+//#define ERROR fprintf(stderr, "Error %s in %d %s\n", strerror(errno), __LINE__, __func__);
 #define DEBUG 0
 #define DBG(stmt) if (DEBUG) {stmt;}
 

@@ -1,8 +1,10 @@
 #include "stack.h"
 
 
+#define ERROR fprintf(stdout, "Error in line %d, func %s\n", __LINE__, __func__);
 const char* sync_path = "/home/stanislav/Documents/MIPT/3rd_semester/Computer_technologies";
-#define N_SEMS 3
+
+#define N_SEMS 1
 
 
 /*TODO: 1) check for empty stack, add new semafore for current size
@@ -27,48 +29,65 @@ void stack_print(stack_t* stack) {
     fprintf(stdout, "\n\n\n");
 }
 
-int set_sem_set(int key) {
+int set_sem(int key) {
 
-    int sem_id = semget(key, N_SEMS, IPC_CREAT | IPC_EXCL | 0666 );
-    if (sem_id > 0 && errno != EEXIST) { 
+    int sem_id = semget(key, N_SEMS, 0666);
+    if (sem_id < 0 && errno == ENOENT) { 
+        DBG(fprintf(stdout, "Creating new semaphore set\n"))
+        
+        sem_id = semget(key, N_SEMS, IPC_CREAT | 0666);
 
-    DBG(fprintf(stdout, "Creating new semaphore set\n"))
-    sem_id = semget(key, N_SEMS, IPC_CREAT | 0666);
-
-    if (sem_id == -1) {
-        //perror("Error in semget() in set_sem_set(): ");
-    }
-
-    } else {
-        DBG(fprintf(stdout, "Attaching old semaphore set\n"))
-        sem_id = semget(key, N_SEMS, 0666);
         if (sem_id == -1) {
-            //perror("Error in semget() in set_sem_set(): ");
+            ERROR
+            perror("Error in semget() in creating new sem set: ");
+            exit(-1);
         }
+
+        int resop = semctl(sem_id, 0, SETVAL, 1);
+        if (resop < 0) {
+            ERROR
+            perror("Error in setting mutex: ");
+            exit(-1);
+        }
+
+        return sem_id;
+
+    } else if (sem_id > 0) {
+        DBG(fprintf(stdout, "Attaching old semaphore set\n"))
+        return sem_id;  
+    } else {
+        ERROR
+        perror("Error in semget() in attaching old sem_set");
+        exit(-1);
     }
-    return sem_id;
+    return -1;
 }
 
 void semdel(int key) {
     int sem_id = semget(key, N_SEMS, 0666);
-    if (sem_id == -1) {
-        //perror("Erorr in semget(): ");
+    if (sem_id < 0) {
+        ERROR
+        perror("Error in semget() in deleting sem set: ");
     }
 
     int resop = semctl(sem_id, 0, IPC_RMID);
     if (resop == -1) {
-        //perror("Error in semctl(): ");
+        ERROR
+         perror("Error in semctl() in deleting sem set: ");
     }
 }
 
 void shmdel(int key, int size) {
-    int id = shmget(key, size * sizeof(char), 0);
+    int id = shmget(key, size * sizeof(void*), 0);
     if (id == -1) {
-        //perror("Erorr in shmget(): ");
+        ERROR
+        perror("Erorr in shmget() in deleting shared memory: ");
     }
+
     int resop = shmctl (id , IPC_RMID , NULL);
     if (resop == -1) {
-        //perror("Error in shmctl(): ");
+        ERROR
+        perror("Error in shmctl() in deleting shared memoory: ");
     }
 }
 
@@ -76,68 +95,51 @@ stack_t* attach_stack(key_t key, int size) {
 
     assert(size > 0);
     assert(key != -1);
-    int resop = 0;
     stack_t* stack = (stack_t*) calloc(1, sizeof(struct stack_t));
     assert(stack);
     int stack_size = size;
 
     DBG(fprintf(stdout, "Stack size: %d elements\n", stack_size))
 
-    int sem_id = set_sem_set(key);
+    int sem_id = set_sem(key);
+    assert(sem_id > 0);
 
-    if (resop == -1) {
-        //perror("Error in semctl() when setting empty semaphore: ");
-    }
+    int id = shmget(key, stack_size * sizeof(void*), 0666);
 
-
-    int id = shmget(key, stack_size * sizeof(void*), IPC_CREAT | IPC_EXCL | 0666);
-
-    if (id == -1) {
+    if (id > 0) { // existing stack
         //fprintf(stdout, "Stack exists, attaching the stack\n");
-
-        id = shmget(key, stack_size * sizeof(void*), 0666);
-        if (id == -1) {
-            //perror("Error in shmget: ");
-        }
 
         stack->m_memory = (void*) shmat(id, NULL, 0);
         if (stack->m_memory == (void*) -1) {
-            //perror("Error in shmat(): ");
+            ERROR
+            perror("Error in shmat() in attaching existing stack: ");
+            exit(-1);
             return NULL;
         }
         stack->m_max_size = *((int*) (stack->m_memory));
         stack->m_cur_size = *((int*) (stack->m_memory + sizeof(void*)));
 
         return stack;
-    } else {
+    } else if (errno == ENOENT) { // creating new stack
         //fprintf(stdout, "No stack exists, creating new stack\n");
         
-        id = shmget(key, stack_size * sizeof(char), 0666);
+        id = shmget(key, stack_size * sizeof(void*), IPC_CREAT | 0666);
         if (id == -1) {
-            //perror("Error in shmget(): ");
+            ERROR
+            perror("Error in shmget() in creating new stack: ");
         }
 
         stack->m_memory = shmat(id, NULL, 0);
 
         if (stack->m_memory == (void*) -1) {
-            //perror("Error in shmat(): ");
+            perror("Error in shmat() in creating new stack: ");
+            ERROR
+            exit(-1);
             return NULL;
         }
 
         int max_size = size;
         int cur_size = 0;
-
-        int resop  = semctl(sem_id, 0, SETVAL, 1);
-        DBG(fprintf(stdout, "Setting semaphore to 1\n"))
-        resop  = semctl(sem_id, 1, SETVAL, max_size );
-        DBG(fprintf(stdout, "Setting empty to stack_size \n"))
-        resop  = semctl(sem_id, 2, SETVAL, 0);
-        DBG(fprintf(stdout, "Setting full to 0 \n"));
-
-        //DBG(fprintf(stdout, "Setting empty to stack_size: %d \n", sval))
-        if (resop == -1) {
-            perror("Error in semctl() when setting empty semaphore: ");
-        }
 
         DBG((fprintf(stdout, "Copying max size %d and cur size %d to shared memory[0] = %p and memory[1] = %p\n", max_size, cur_size,
                                 stack->m_memory, stack->m_memory + sizeof(void*))))
@@ -151,6 +153,10 @@ stack_t* attach_stack(key_t key, int size) {
                             stack->m_memory, stack->m_cur_size, stack->m_memory + sizeof(void*)))
 
         return stack;
+    } else {
+        ERROR
+        perror( "Error in creating new stack: ");
+        exit(-1);
     }
 
 
@@ -158,6 +164,7 @@ stack_t* attach_stack(key_t key, int size) {
 
 int get_size(stack_t* stack) {
     assert(stack != NULL);
+
     //update cur size
     stack->m_max_size = *(( int*) (stack->m_memory ));
 
@@ -166,6 +173,7 @@ int get_size(stack_t* stack) {
 
 int get_count(stack_t* stack) {
     assert(stack != NULL);
+
     //update cur size
     stack->m_cur_size = *(( int*) (stack->m_memory +  sizeof(void*)) );
     
@@ -175,9 +183,11 @@ int get_count(stack_t* stack) {
 
 int detach_stack(stack_t* stack) {
     int resop = 0;
+
     resop = shmdt(stack->m_memory);
     if (resop == -1) {
-        //perror("Error in detaching stack with shmdt(): ");
+        ERROR
+        perror("Error in detaching stack with shmdt(): ");
     }
     free(stack);
     return resop;
@@ -189,20 +199,49 @@ int mark_destruct(stack_t* stack) {
 
     int key = ftok(sync_path, SYNC);
     if (key == -1) {
-        //perror("Error in ftok(): ");
+        ERROR
+        perror("Error in ftok() in marking for destruct: ");
     }
 
-    int id = shmget(key, 0, 0);
+    struct sembuf mutex;
+    mutex.sem_flg = SEM_UNDO;
+    mutex.sem_num = 0;
+    mutex.sem_op = -1;
+
+    int sem_id = set_sem(key);
+
+    semop(sem_id, &mutex, 1);
+
+    stack->m_max_size = get_size(stack);
+
+    int id = shmget(key, stack->m_max_size * sizeof(void*), 0666);
     if (id == -1) {
-        //perror("Error in shmget: ");
+        ERROR
+        perror("Error in shmget i marking for destruction: ");
     }
 
-    int resop = shmctl(id, IPC_RMID, 0);
-    if (resop == -1) {
-        //perror("Error in marking stack for destruction: ");
+    struct shmid_ds buf;
+    shmctl(id, IPC_STAT, &buf);
+
+    //printf("Current attaches: %ld\n", buf.shm_nattch);
+
+    if (buf.shm_nattch == 1) {
+        int resop = shmctl(id, IPC_RMID, NULL);
+
+        if (resop == -1) {
+            ERROR
+            perror("Error in removing shmem in markdsctrk: ");
+        }
     }
 
-    return resop;
+
+    mutex.sem_flg = SEM_UNDO;
+    mutex.sem_num = 0;
+    mutex.sem_op = 1;
+
+    semop(sem_id, &mutex, 1);
+
+    return 0;
 
 }
 
@@ -214,7 +253,7 @@ int push(stack_t* stack, void* val) {
     }
 
     // creating or attaching semaphore set
-    int sem_id = set_sem_set(key);
+    int sem_id = set_sem(key);
 
     struct sembuf* sops = (struct sembuf*) calloc(3, sizeof(struct sembuf));
     assert(sops);
@@ -320,7 +359,7 @@ int pop(stack_t* stack, void** val) {
     }
 
     // creating or attaching semaphore set
-    int sem_id = set_sem_set(key);
+    int sem_id = set_sem(key);
 
 
     struct sembuf* sops = (struct sembuf*) calloc(3, sizeof(struct sembuf));
@@ -421,4 +460,5 @@ int set_wait(int val, struct timespec* timeout) {
     } else if (val == 0) {
         return val;
     }
+    return 0;
 }
